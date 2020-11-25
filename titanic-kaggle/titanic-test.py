@@ -7,7 +7,26 @@ import numpy as np
 import re
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.model_selection import train_test_split
+import sklearn
+#import xgboost as xgb
+import matplotlib.pyplot as plt
+
+import plotly.offline as py
+import plotly.graph_objs as go
+import plotly.tools as tls
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import SklearnHelper.py as skh
+
+# Going to use these 5 base models for the stacking
+from sklearn.ensemble import (RandomForestClassifier, AdaBoostClassifier,
+                              GradientBoostingClassifier, ExtraTreesClassifier)
+from sklearn.svm import SVC
+from sklearn.cross_validation import KFold
 
 #Read the data
 train = pd.read_csv('./titanic_train.csv', index_col = 0)
@@ -113,7 +132,8 @@ train = train.drop(drop_elements, axis = 1)
 train = train.drop(['CategoricalAge', 'CategoricalFare'], axis = 1)
 test = test.drop(drop_elements, axis = 1)
 
-print(train.head(3))
+#Test: Print the resulting dataframe
+#print(train.head(3))
 
 colormap = plt.cm.RdBu
 plt.figure('Pearson Correlation of Features', figsize = (14, 12))
@@ -121,6 +141,39 @@ plt.title('Pearson Correlation of Features')
 sns.heatmap(train.astype(float).corr(), linewidths = 0.1, vmax = 1.0,
             square = True, cmap = colormap, linecolor= 'white', annot= True)
 plt.show()
+
+ntrain = train.shape[0]
+ntest = test.shape[0]
+SEED = 0
+NFOLDS = 5 # sets folds for out of fold prediction
+kf = KFold(ntrain, n_folds = NFOLDS, random_state = SEED)
+
+class SklearnHelper(object):
+    def __init__(self, clf, seed=0, params=None):
+        params['random_state'] = seed
+        self.clf = clf(**params)
+
+    def train(self, x_train, y_train):
+        self.clf.fit(x_train, y_train)
+
+    def predict(self, x):
+        return self.clf.predict(x)
+
+    def fit(self, x, y):
+        return self.clf.fit(x, y)
+
+    def feature_importances(self, x, y):
+        print(self.clf.fit(x,y).feature_importances_)
+
+    def get_oof(clf, x_train, y_train, x_test):
+        oof_train = np.zeros((ntrain, ))
+        oof_test = np.zeros((ntest, ))
+        oof_test_skf = np.empty((NFOLDS, ntest))
+
+        for i, (train_index, test_index) in enumerate(kf):
+            x_tr = x_train[train_index]
+            y_tr = y_train[train_index]
+            x_te = x_train[test_index]
 
 #Build a linear regression model
 # Train and Split the train dataset
@@ -131,3 +184,4 @@ plt.show()
 #)
 
 #train = pd.get_dummies(train, columns = [''], drop_first = True)
+
