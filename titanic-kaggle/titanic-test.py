@@ -13,7 +13,8 @@ from sklearn.model_selection import train_test_split
 train = pd.read_csv('./titanic_train.csv', index_col = 0)
 test = pd.read_csv('./titanic_test.csv', index_col = 0)
 
-#PassengerId = test['PassengerId']
+#Show all the columns
+pd.set_option('display.max_columns', None)
 
 #Feature engineering part
 full_data = [train, test]
@@ -88,6 +89,10 @@ for dataset in full_data:
     #Mapping Embarked
     dataset['Embarked'] = dataset['Embarked'].map( {'S': 0, 'C': 1, 'Q': 2} ).astype(int)
 
+    #Mapping Titles
+    dataset['Title'] = dataset['Title'].map( {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5} )
+    dataset['Title'] = dataset['Title'].fillna(0)
+
     #Mapping Fare (try using cut in the future?)
     dataset.loc[ dataset['Fare'] <= 7.91, 'Fare'] = 0
     dataset.loc[ (dataset['Fare'] > 7.91) & (dataset['Fare'] <= 14.545), 'Fare'] = 1
@@ -102,8 +107,21 @@ for dataset in full_data:
     dataset.loc[(dataset['Age'] > 48) & (dataset['Age'] <= 64), 'Age'] = 3
     dataset.loc[dataset['Age'] > 64, 'Age'] = 4
 
+#Feature selection
+drop_elements = ['Name', 'Ticket', 'Cabin', 'SibSp']
+train = train.drop(drop_elements, axis = 1)
+train = train.drop(['CategoricalAge', 'CategoricalFare'], axis = 1)
+test = test.drop(drop_elements, axis = 1)
 
-print(train['CategoricalFare'])
+print(train.head(3))
+
+colormap = plt.cm.RdBu
+plt.figure('Pearson Correlation of Features', figsize = (14, 12))
+plt.title('Pearson Correlation of Features')
+sns.heatmap(train.astype(float).corr(), linewidths = 0.1, vmax = 1.0,
+            square = True, cmap = colormap, linecolor= 'white', annot= True)
+plt.show()
+
 #Build a linear regression model
 # Train and Split the train dataset
 #X =
