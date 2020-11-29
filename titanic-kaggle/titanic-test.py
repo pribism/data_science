@@ -20,13 +20,13 @@ import plotly.tools as tls
 import warnings
 warnings.filterwarnings('ignore')
 
-import SklearnHelper.py as skh
+#import SklearnHelper.py as skh
 
 # Going to use these 5 base models for the stacking
 from sklearn.ensemble import (RandomForestClassifier, AdaBoostClassifier,
                               GradientBoostingClassifier, ExtraTreesClassifier)
 from sklearn.svm import SVC
-from sklearn.cross_validation import KFold
+from sklearn.model_selection import KFold
 
 #Read the data
 train = pd.read_csv('./titanic_train.csv', index_col = 0)
@@ -140,20 +140,24 @@ plt.figure('Pearson Correlation of Features', figsize = (14, 12))
 plt.title('Pearson Correlation of Features')
 sns.heatmap(train.astype(float).corr(), linewidths = 0.1, vmax = 1.0,
             square = True, cmap = colormap, linecolor= 'white', annot= True)
-plt.show()
+#plt.show()
 
 ntrain = train.shape[0]
 ntest = test.shape[0]
 SEED = 0
 NFOLDS = 5 # sets folds for out of fold prediction
-kf = KFold(ntrain, n_folds = NFOLDS, random_state = SEED)
+#kf = KFold(ntrain, n_folds = NFOLDS, random_state = SEED)
+kf = KFold(NFOLDS, random_state = SEED)
+kf.get_n_splits(ntrain)
+#kf.split(kf)
+#print(enumerate(kf))
 
 class SklearnHelper(object):
     def __init__(self, clf, seed=0, params=None):
         params['random_state'] = seed
         self.clf = clf(**params)
 
-    def train(self, x_train, y_train):
+    def train_fit(self, x_train, y_train):
         self.clf.fit(x_train, y_train)
 
     def predict(self, x):
@@ -163,25 +167,116 @@ class SklearnHelper(object):
         return self.clf.fit(x, y)
 
     def feature_importances(self, x, y):
-        print(self.clf.fit(x,y).feature_importances_)
+        return self.clf.fit(x,y).feature_importances_
 
-    def get_oof(clf, x_train, y_train, x_test):
-        oof_train = np.zeros((ntrain, ))
-        oof_test = np.zeros((ntest, ))
-        oof_test_skf = np.empty((NFOLDS, ntest))
+# Cross-validation (K-fold cross valid.)
+def get_oof(clf, x_train, y_train, x_test):
+    oof_train = np.zeros((ntrain, ))
+    oof_test = np.zeros((ntest, ))
+    oof_test_skf = np.empty((NFOLDS, ntest))
 
-        for i, (train_index, test_index) in enumerate(kf):
-            x_tr = x_train[train_index]
-            y_tr = y_train[train_index]
-            x_te = x_train[test_index]
+    # original version: for i, (train_index, test_index) in enumerate(kf):
 
-#Build a linear regression model
-# Train and Split the train dataset
-#X =
-#y =
-#X_train, X_test, y_train, y_test = train_test_split(
-#    X, y, test_size=0.3
-#)
+    for i, (train_index, test_index) in enumerate(kf.split(train)):
+        print(train_index, test_index)
+        x_tr = x_train[train_index]
+        y_tr = y_train[train_index]
+        x_te = x_train[test_index]
 
-#train = pd.get_dummies(train, columns = [''], drop_first = True)
+        clf.train_fit(x_tr, y_tr)
+
+        oof_train[test_index] = clf.predict(x_te)
+        oof_test_skf[i, :] = clf.predict(x_test)
+
+    oof_test[:] = oof_test_skf.mean(axis=0)
+    return oof_train.reshape(-1, 1), oof_test.reshape(-1, 1)
+
+
+#Setting the parameters for the 1st line models
+#Random Forest parameters
+
+rf_params = {
+    'n_jobs': -1,
+    'n_estimators': 500,
+    'warm_start': True,
+    #'max_features': 0.2,
+    'max_depth': 6,
+    'min_samples_leaf': 2,
+    'max_features': 'sqrt',
+    'verbose': 0
+}
+
+#Extra trees parameters
+et_params = {
+    'n_jobs': -1,
+    'n_estimators':500,
+    #'max_features': 0.5,
+    'max_depth': 8,
+    'min_samples_leaf': 2,
+    'verbose': 0
+}
+
+#Ada Boost parameters
+ada_params = {
+    'n_estimators': 500,
+    'learning_rate': 0.75
+}
+
+#Gradient Boosting parameters
+gb_params = {
+    'n_estimators': 500,
+    #'max_features': 0.2,
+    'max_depth': 5,
+    'min_samples_leaf': 2,
+    'verbose': 0
+}
+
+#Support Vector Classifier parameters
+svc_params = {
+    'kernel' : 'linear',
+    'C' : 0.025
+}
+
+# Creating the 5 Objects that represent our 4 Models
+rf = SklearnHelper(clf= RandomForestClassifier, seed=SEED, params=rf_params)
+et = SklearnHelper(clf = ExtraTreesClassifier, seed = SEED, params = et_params)
+ada = SklearnHelper(clf = AdaBoostClassifier, seed = SEED, params=ada_params)
+gb = SklearnHelper(clf = GradientBoostingClassifier, seed = SEED, params = gb_params)
+svc = SklearnHelper(clf = SVC, seed = SEED, params = svc_params)
+
+# Creating the Numpy arrays of the train, test and target dataframes as an input to the models
+y_train = train['Survived'].ravel()
+train = train.drop(['Survived'], axis = 1)
+X_train = train.values #Creates an array of the train data
+X_test = test.values #Creates an array of the test data
+
+#Running the first level models, create the OOF train and test predictions. These will be used as new features
+et_oof_train, et_oof_test = get_oof(et, X_train, y_train, X_test) #Extra Trees
+rf_oof_train, rf_oof_test = get_oof(rf, X_train, y_train, X_test) #Random forest
+ada_oof_train, ada_oof_test = get_oof(ada, X_train, y_train, X_test) #AdaBoost
+gb_oof_train, gb_oof_test = get_oof(gb, X_train, y_train, X_test) #Gradient Boost
+svc_oof_train, svc_oof_test = get_oof(svc, X_train, y_train, X_test) #Suport Vector Classifier
+
+print("Training is complete")
+
+#Print the importances
+
+rf_features = rf.feature_importances(X_train, y_train)
+et_features = et.feature_importances(X_train, y_train)
+ada_features = ada.feature_importances(X_train, y_train)
+gb_features = gb.feature_importances(X_train, y_train)
+
+print(rf_features)#, et_feature, ada_feature, gb_feature)
+
+# Create a dataframe from the importance features for easy plotting
+
+cols = train.columns.values
+
+feature_dataframe = pd.DataFrame( {
+    'features': cols,
+    'Random Forest feature importances': rf_features,
+    'Extra Trees feature importances': et_features,
+    'AdaBoost feature importances': ada_features,
+    'Gradient Boost feature importances': gb_features
+} )
 
